@@ -1,24 +1,40 @@
 import React from 'react';
 import { FamilyMember, Task } from '../types';
 import HeartIcon from './icons/HeartIcon';
+import TrashIcon from './icons/TrashIcon';
 import Avatar from './Avatar';
 
 interface TaskCardProps {
   task: Task;
   member: FamilyMember;
   onAppreciate: (taskId: number) => void;
+  onDelete?: (taskId: number) => void;
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({ task, member, onAppreciate }) => {
+const TaskCard: React.FC<TaskCardProps> = ({ task, member, onAppreciate, onDelete }) => {
   const formattedDate = new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(task.timestamp));
 
   return (
-    <div className="bg-white rounded-2xl shadow-md p-5 flex flex-col justify-between transition-transform hover:scale-105 duration-300 ease-in-out">
+    <div className="bg-white rounded-2xl shadow-md p-5 flex flex-col justify-between transition-transform hover:scale-105 duration-300 ease-in-out relative group">
+      {onDelete && (
+          <button 
+            onClick={(e) => {
+                e.stopPropagation();
+                onDelete(task.id);
+            }}
+            className="absolute top-3 right-3 text-slate-300 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
+            aria-label="Delete task"
+            title="Delete task"
+          >
+            <TrashIcon className="w-5 h-5" />
+          </button>
+      )}
+      
       <div>
-        <div className="flex items-center mb-4">
+        <div className="flex items-center mb-4 pr-8">
           <Avatar initial={member.avatar.initial} color={member.avatar.color} />
           <div className="ml-4">
             <p className="font-bold text-slate-800 text-lg">{member.name}</p>

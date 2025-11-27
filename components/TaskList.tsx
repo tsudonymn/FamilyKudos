@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { FamilyMember, Task } from '../types';
 import TaskCard from './TaskCard';
@@ -7,9 +6,10 @@ interface TaskListProps {
   tasks: Task[];
   familyMembers: FamilyMember[];
   onAppreciate: (taskId: number) => void;
+  onDelete: (taskId: number) => void;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ tasks, familyMembers, onAppreciate }) => {
+const TaskList: React.FC<TaskListProps> = ({ tasks, familyMembers, onAppreciate, onDelete }) => {
   if (tasks.length === 0) {
     return (
       <div className="text-center py-16 bg-white rounded-2xl shadow-lg">
@@ -31,6 +31,7 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, familyMembers, onAppreciate 
             task={task}
             member={member}
             onAppreciate={onAppreciate}
+            onDelete={onDelete}
           />
         ) : null;
       })}

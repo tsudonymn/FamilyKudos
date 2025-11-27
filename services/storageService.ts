@@ -6,7 +6,8 @@ import {
   getDoc, 
   setDoc, 
   onSnapshot, 
-  FirestoreError 
+  FirestoreError,
+  Firestore
 } from 'firebase/firestore';
 import { FamilyMember, Task } from '../types';
 
@@ -17,9 +18,18 @@ interface StorageData {
   members: FamilyMember[];
 }
 
+// Helper to ensure DB is initialized
+const getDb = (): Firestore => {
+  if (!db) {
+    throw new Error("Cloud database is not configured. Please add your Firebase Configuration in Settings.");
+  }
+  return db;
+};
+
 export const createFamilyGroup = async (data: StorageData): Promise<string> => {
   try {
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), data);
+    const database = getDb();
+    const docRef = await addDoc(collection(database, COLLECTION_NAME), data);
     return docRef.id;
   } catch (error) {
     console.error("Error creating family group:", error);
@@ -29,7 +39,8 @@ export const createFamilyGroup = async (data: StorageData): Promise<string> => {
 
 export const getFamilyGroup = async (id: string): Promise<StorageData> => {
   try {
-    const docRef = doc(db, COLLECTION_NAME, id);
+    const database = getDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
     const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
@@ -45,9 +56,9 @@ export const getFamilyGroup = async (id: string): Promise<StorageData> => {
 
 export const updateFamilyGroup = async (id: string, data: StorageData): Promise<void> => {
   try {
-    const docRef = doc(db, COLLECTION_NAME, id);
-    // Use merge: true to avoid overwriting fields if we partially update, 
-    // though here we are syncing the whole state.
+    const database = getDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
+    // Use merge: true to avoid overwriting fields if we partially update
     await setDoc(docRef, data, { merge: true });
   } catch (error) {
     console.error("Error updating family group:", error);
@@ -60,15 +71,20 @@ export const subscribeToFamilyGroup = (
   onUpdate: (data: StorageData) => void,
   onError: (error: FirestoreError) => void
 ) => {
-  const docRef = doc(db, COLLECTION_NAME, id);
-  
-  // onSnapshot provides real-time updates
-  return onSnapshot(docRef, (doc) => {
-    if (doc.exists()) {
-      // We pass the data to the callback.
-      // Note: We might want to check doc.metadata.hasPendingWrites to avoid
-      // "echo" updates from our own local writes, but React's diffing usually handles it.
-      onUpdate(doc.data() as StorageData);
-    }
-  }, onError);
+  try {
+    const database = getDb();
+    const docRef = doc(database, COLLECTION_NAME, id);
+    
+    // onSnapshot provides real-time updates
+    return onSnapshot(docRef, (doc) => {
+      if (doc.exists()) {
+        onUpdate(doc.data() as StorageData);
+      }
+    }, onError);
+  } catch (e) {
+    // If DB isn't ready, we can't subscribe. 
+    // Return a no-op unsubscribe function.
+    console.error("Cannot subscribe:", e);
+    return () => {};
+  }
 };

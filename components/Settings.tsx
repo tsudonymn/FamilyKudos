@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FamilyMember } from '../types';
 import { AVATAR_COLORS } from '../constants';
 import Avatar from './Avatar';
@@ -29,6 +29,27 @@ const Settings: React.FC<SettingsProps> = ({
   const [newMemberName, setNewMemberName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [copyStatus, setCopyStatus] = useState('Copy Code');
+  
+  // Environment Config State
+  const [showEnvConfig, setShowEnvConfig] = useState(false);
+  const [envConfigInput, setEnvConfigInput] = useState('');
+  const [isSavingEnv, setIsSavingEnv] = useState(false);
+
+  useEffect(() => {
+    // Load existing env config from local storage for display
+    const stored = localStorage.getItem('familyKudos_envConfig');
+    if (stored) {
+        try {
+            const parsed = JSON.parse(stored);
+            const formatted = Object.entries(parsed)
+                .map(([k, v]) => `${k}=${v}`)
+                .join('\n');
+            setEnvConfigInput(formatted);
+        } catch(e) {
+            // ignore error
+        }
+    }
+  }, []);
 
   const handleAddMember = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +78,47 @@ const Settings: React.FC<SettingsProps> = ({
         setCopyStatus('Copied!');
         setTimeout(() => setCopyStatus('Copy Code'), 2000);
     }
+  };
+
+  const handleSaveEnvConfig = () => {
+      setIsSavingEnv(true);
+      const lines = envConfigInput.split('\n');
+      const config: Record<string, string> = {};
+      
+      lines.forEach(line => {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) return;
+          
+          const match = trimmed.match(/^([^=]+)=(.*)$/);
+          if (match) {
+              const key = match[1].trim();
+              let value = match[2].trim();
+              // Remove quotes if present
+              if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                  value = value.slice(1, -1);
+              }
+              config[key] = value;
+          }
+      });
+      
+      try {
+        localStorage.setItem('familyKudos_envConfig', JSON.stringify(config));
+        // Automatically reload after a short delay
+        setTimeout(() => {
+            window.location.reload();
+        }, 500);
+      } catch (e) {
+        console.error("Failed to save config", e);
+        setIsSavingEnv(false);
+        alert("Failed to save configuration locally.");
+      }
+  };
+
+  const handleClearEnvConfig = () => {
+       if (confirm('Are you sure you want to clear the custom configuration?')) {
+           localStorage.removeItem('familyKudos_envConfig');
+           window.location.reload();
+       }
   };
 
   return (
@@ -165,7 +227,7 @@ const Settings: React.FC<SettingsProps> = ({
           </form>
         </div>
 
-        <div>
+        <div className="mb-8">
           <h3 className="text-lg font-semibold text-slate-700 mb-3">Current Members</h3>
           <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
             {familyMembers.length > 0 ? familyMembers.map(member => (
@@ -186,6 +248,49 @@ const Settings: React.FC<SettingsProps> = ({
               <p className="text-slate-500 text-center py-4">No family members yet. Add one above!</p>
             )}
           </div>
+        </div>
+
+        {/* Environment Configuration */}
+        <div className="border-t border-slate-200 pt-6">
+            <button 
+                onClick={() => setShowEnvConfig(!showEnvConfig)}
+                className="flex items-center justify-between w-full text-left text-slate-600 font-semibold mb-2 hover:text-sky-600 transition-colors"
+            >
+                <span>App Configuration</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transform transition-transform ${showEnvConfig ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            
+            {showEnvConfig && (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 animate-fade-in">
+                    <p className="text-xs text-slate-500 mb-2">
+                        Paste the content of your <code>.env</code> file here to configure Google Auth and Firebase.
+                    </p>
+                    <textarea 
+                        value={envConfigInput}
+                        onChange={(e) => setEnvConfigInput(e.target.value)}
+                        placeholder="GOOGLE_CLIENT_ID=...&#10;FIREBASE_API_KEY=..."
+                        className="w-full h-32 p-2 text-xs font-mono bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 outline-none mb-3"
+                        spellCheck={false}
+                    />
+                    <div className="flex gap-2 justify-end">
+                        <button 
+                            onClick={handleClearEnvConfig}
+                            className="px-3 py-1.5 text-xs text-slate-500 hover:text-red-600 font-medium transition-colors"
+                        >
+                            Reset
+                        </button>
+                        <button 
+                            onClick={handleSaveEnvConfig}
+                            disabled={isSavingEnv}
+                            className="bg-slate-800 text-white px-4 py-1.5 rounded-md text-xs font-bold hover:bg-slate-700 transition-colors disabled:opacity-50"
+                        >
+                            {isSavingEnv ? 'Reloading...' : 'Save & Reload'}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
 
       </div>

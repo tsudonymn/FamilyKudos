@@ -8,13 +8,12 @@ import { createFamilyGroup, getFamilyGroup, updateFamilyGroup, subscribeToFamily
 import GeminiMessage from './components/GeminiMessage';
 import Settings from './components/Settings';
 import UserProfile from './components/UserProfile';
+import { config } from './config';
 
 // This is necessary to access the Google Identity Services library
 declare const google: any;
 
-// TODO: Replace with your actual Google Client ID from the Google Cloud Console.
-// If you don't have one, the app will automatically offer a Guest Mode.
-const GOOGLE_CLIENT_ID = "1088368351089-8dn0g5auntt7338ch65gp63jqdqsi2oa.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = config.googleClientId;
 
 const SHARED_STORAGE_KEY_TASKS = 'familyKudos_shared_tasks';
 const SHARED_STORAGE_KEY_MEMBERS = 'familyKudos_shared_members';
@@ -275,6 +274,12 @@ const App: React.FC = () => {
     );
   };
 
+  const handleDeleteTask = (taskId: number) => {
+    if (window.confirm("Are you sure you want to delete this task?")) {
+        setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+    }
+  };
+
   // Cloud Sync Handlers
   const handleCreateGroup = async () => {
       try {
@@ -282,8 +287,8 @@ const App: React.FC = () => {
           const id = await createFamilyGroup({ tasks, members: familyMembers });
           setFamilyGroupId(id);
           localStorage.setItem(STORAGE_KEY_FAMILY_GROUP_ID, id);
-      } catch (e) {
-          alert("Failed to create cloud group. Please check your Firebase configuration.");
+      } catch (e: any) {
+          alert(`Failed to create cloud group: ${e.message}`);
           console.error(e);
       } finally {
           setIsSyncing(false);
@@ -359,7 +364,7 @@ const App: React.FC = () => {
             
             {!isGoogleAuthConfigured && (
                  <p className="mt-6 text-xs text-slate-400">
-                    To enable Google Sign-In, update <code>GOOGLE_CLIENT_ID</code> in <code>App.tsx</code>.
+                    To enable Google Sign-In, update <code>GOOGLE_CLIENT_ID</code> in <code>config.ts</code>.
                  </p>
             )}
         </div>
@@ -414,6 +419,7 @@ const App: React.FC = () => {
           tasks={sortedTasks}
           familyMembers={familyMembers}
           onAppreciate={handleAppreciateTask}
+          onDelete={handleDeleteTask}
         />
       </main>
       

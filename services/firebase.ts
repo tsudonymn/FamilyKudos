@@ -1,23 +1,26 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, Firestore } from 'firebase/firestore';
+import { config } from '../config';
 
-// TODO: Replace the following with your app's Firebase project configuration
-// You can find this in the Firebase Console -> Project Settings -> General
-// 1. Go to https://console.firebase.google.com/
-// 2. Create a project (or use your existing Google Cloud project)
-// 3. Add a web app
-// 4. Copy the config object below
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+let app;
+let db: Firestore | null = null;
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Validate that we have real configuration values and not placeholders
+const { apiKey, projectId } = config.firebase;
+const isConfigured = apiKey && 
+                     apiKey !== "YOUR_API_KEY" && 
+                     projectId && 
+                     projectId !== "YOUR_PROJECT_ID";
 
-// Initialize Cloud Firestore and get a reference to the service
-export const db = getFirestore(app);
+if (isConfigured) {
+  try {
+    app = initializeApp(config.firebase);
+    db = getFirestore(app);
+  } catch (error) {
+    console.error("Failed to initialize Firebase:", error);
+  }
+} else {
+  console.log("Firebase not configured. Cloud sync disabled.");
+}
+
+export { db };
