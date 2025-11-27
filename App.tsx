@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Task, FamilyMember, User } from './types';
 import { DEFAULT_FAMILY_MEMBERS } from './constants';
 import TaskForm from './components/TaskForm';
 import TaskList from './components/TaskList';
 import { getEncouragement } from './services/geminiService';
+import { createFamilyGroup, getFamilyGroup, updateFamilyGroup, subscribeToFamilyGroup } from './services/storageService';
 import GeminiMessage from './components/GeminiMessage';
 import Settings from './components/Settings';
 import UserProfile from './components/UserProfile';
@@ -13,13 +14,32 @@ declare const google: any;
 
 // TODO: Replace with your actual Google Client ID from the Google Cloud Console.
 // If you don't have one, the app will automatically offer a Guest Mode.
-const GOOGLE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "1088368351089-8dn0g5auntt7338ch65gp63jqdqsi2oa.apps.googleusercontent.com";
+
+const SHARED_STORAGE_KEY_TASKS = 'familyKudos_shared_tasks';
+const SHARED_STORAGE_KEY_MEMBERS = 'familyKudos_shared_members';
+const STORAGE_KEY_FAMILY_GROUP_ID = 'familyKudos_familyGroupId';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
+  // Lazy initialize user from localStorage to avoid effect race conditions
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+        const stored = localStorage.getItem('familyKudosUser');
+        return stored ? JSON.parse(stored) : null;
+    } catch (e) {
+        return null;
+    }
+  });
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  
+  // Cloud Sync State
+  const [familyGroupId, setFamilyGroupId] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEY_FAMILY_GROUP_ID);
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [isGeminiLoading, setIsGeminiLoading] = useState(false);
   const [geminiMessage, setGeminiMessage] = useState<string | null>(null);
@@ -65,15 +85,13 @@ const App: React.FC = () => {
             callback: handleCredentialResponse,
           });
           
-          if (!localStorage.getItem('familyKudosUser')) {
-              // Only render button if the element exists
-              const signInContainer = document.getElementById('signInDiv');
-              if (signInContainer) {
-                google.accounts.id.renderButton(
-                  signInContainer,
-                  { theme: 'outline', size: 'large', text: 'signin_with', width: '280' }
-                );
-              }
+          // Try to render the button if the container exists
+          const signInContainer = document.getElementById('signInDiv');
+          if (signInContainer) {
+            google.accounts.id.renderButton(
+              signInContainer,
+              { theme: 'outline', size: 'large', text: 'signin_with', width: '280' }
+            );
           }
         } catch (e) {
           console.error("GSI Initialization failed", e);
@@ -81,54 +99,126 @@ const App: React.FC = () => {
       }
     };
     
-    // Check for user on initial load
-    const storedUser = localStorage.getItem('familyKudosUser');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-
     // GSI script might load after component mounts
     const script = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
     if (script) {
         script.addEventListener('load', initializeGSI);
     }
+    
     if (window.google) {
         initializeGSI();
     }
-  }, [isGoogleAuthConfigured]);
+    
+    // Cleanup listener
+    return () => {
+        if (script) script.removeEventListener('load', initializeGSI);
+    };
+  }, [isGoogleAuthConfigured, user]);
   
-  // Effect for loading data from localStorage after login
+  // Function to sync data to cloud
+  const syncToCloud = useCallback(async (currentTasks: Task[], currentMembers: FamilyMember[]) => {
+      if (!familyGroupId) return;
+      
+      try {
+          setIsSyncing(true);
+          await updateFamilyGroup(familyGroupId, {
+              tasks: currentTasks,
+              members: currentMembers
+          });
+      } catch (error) {
+          console.error("Error syncing to cloud:", error);
+      } finally {
+          setIsSyncing(false);
+      }
+  }, [familyGroupId]);
+
+  // Effect for initial data load (Local or Cloud)
   useEffect(() => {
     if (user && !isDataLoaded) {
-      const dataKeySuffix = user.email;
-      try {
-        const savedTasks = localStorage.getItem(`familyKudosTasks_${dataKeySuffix}`);
-        setTasks(savedTasks ? JSON.parse(savedTasks) : []);
+      const loadData = async () => {
+        try {
+            // Priority: Cloud > Local Storage > Default
+            if (familyGroupId) {
+                try {
+                    const cloudData = await getFamilyGroup(familyGroupId);
+                    setTasks(cloudData.tasks || []);
+                    setFamilyMembers(cloudData.members || []);
+                } catch (e) {
+                    console.error("Failed to load from cloud, falling back to local", e);
+                    // Fallback to local if cloud fails
+                    const savedTasks = localStorage.getItem(SHARED_STORAGE_KEY_TASKS);
+                    setTasks(savedTasks ? JSON.parse(savedTasks) : []);
+                    const savedMembers = localStorage.getItem(SHARED_STORAGE_KEY_MEMBERS);
+                    setFamilyMembers(savedMembers ? JSON.parse(savedMembers) : DEFAULT_FAMILY_MEMBERS);
+                }
+            } else {
+                const savedTasks = localStorage.getItem(SHARED_STORAGE_KEY_TASKS);
+                setTasks(savedTasks ? JSON.parse(savedTasks) : []);
 
-        const savedMembers = localStorage.getItem(`familyKudosMembers_${dataKeySuffix}`);
-        setFamilyMembers(savedMembers ? JSON.parse(savedMembers) : DEFAULT_FAMILY_MEMBERS);
-
-        setIsDataLoaded(true);
-      } catch (error) {
-        console.error("Could not parse data from localStorage", error);
-        setFamilyMembers(DEFAULT_FAMILY_MEMBERS); // Reset to default on error
-        setTasks([]);
-      }
+                const savedMembers = localStorage.getItem(SHARED_STORAGE_KEY_MEMBERS);
+                setFamilyMembers(savedMembers ? JSON.parse(savedMembers) : DEFAULT_FAMILY_MEMBERS);
+            }
+            setIsDataLoaded(true);
+        } catch (error) {
+            console.error("Could not parse data", error);
+            setFamilyMembers(DEFAULT_FAMILY_MEMBERS);
+            setTasks([]);
+            setIsDataLoaded(true);
+        }
+      };
+      loadData();
     }
-  }, [user, isDataLoaded]);
+  }, [user, isDataLoaded, familyGroupId]);
 
-  // Effect for saving data to localStorage
+  // Real-time Cloud Subscription
   useEffect(() => {
-    if (user) {
-      const dataKeySuffix = user.email;
+    if (familyGroupId && isDataLoaded) {
+        console.log("Subscribing to family group:", familyGroupId);
+        const unsubscribe = subscribeToFamilyGroup(
+            familyGroupId, 
+            (data) => {
+                // Update state from cloud
+                // We use functional updates to check if data actually changed to prevent loops
+                setTasks(prev => {
+                    if (JSON.stringify(prev) !== JSON.stringify(data.tasks)) {
+                        return data.tasks || [];
+                    }
+                    return prev;
+                });
+                setFamilyMembers(prev => {
+                    if (JSON.stringify(prev) !== JSON.stringify(data.members)) {
+                        return data.members || [];
+                    }
+                    return prev;
+                });
+            },
+            (error) => {
+                console.error("Subscription error:", error);
+            }
+        );
+
+        return () => unsubscribe();
+    }
+  }, [familyGroupId, isDataLoaded]);
+
+  // Effect for saving data to localStorage AND Cloud
+  // We use this effect to react to any state change in tasks/members
+  useEffect(() => {
+    if (user && isDataLoaded) {
       try {
-        localStorage.setItem(`familyKudosTasks_${dataKeySuffix}`, JSON.stringify(tasks));
-        localStorage.setItem(`familyKudosMembers_${dataKeySuffix}`, JSON.stringify(familyMembers));
+        localStorage.setItem(SHARED_STORAGE_KEY_TASKS, JSON.stringify(tasks));
+        localStorage.setItem(SHARED_STORAGE_KEY_MEMBERS, JSON.stringify(familyMembers));
+        
+        // Trigger cloud sync if connected
+        // Note: we don't await here, we fire and forget (optimistic UI)
+        if (familyGroupId) {
+            syncToCloud(tasks, familyMembers);
+        }
       } catch (error) {
-        console.error("Could not save data to localStorage", error);
+        console.error("Could not save data", error);
       }
     }
-  }, [tasks, familyMembers, user]);
+  }, [tasks, familyMembers, user, isDataLoaded, familyGroupId, syncToCloud]);
   
   const handleLogout = () => {
     if (isGoogleAuthConfigured && window.google) {
@@ -141,8 +231,6 @@ const App: React.FC = () => {
     localStorage.removeItem('familyKudosUser');
     setUser(null);
     setIsDataLoaded(false);
-    setTasks([]);
-    setFamilyMembers([]);
   };
 
   const handleGuestLogin = () => {
@@ -166,14 +254,16 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
     };
     
-    setTasks(prevTasks => [newTask, ...prevTasks]);
+    // Optimistic Update
+    const newTasks = [newTask, ...tasks];
+    setTasks(newTasks);
     
     const memberName = familyMembers.find(m => m.id === memberId)?.name || 'Someone';
     const encouragement = await getEncouragement(memberName, description);
     
     setGeminiMessage(encouragement);
     setIsGeminiLoading(false);
-  }, [familyMembers]);
+  }, [familyMembers, tasks]);
   
   const handleAppreciateTask = (taskId: number) => {
     setTasks(prevTasks =>
@@ -183,6 +273,51 @@ const App: React.FC = () => {
           : task
       )
     );
+  };
+
+  // Cloud Sync Handlers
+  const handleCreateGroup = async () => {
+      try {
+          setIsSyncing(true);
+          const id = await createFamilyGroup({ tasks, members: familyMembers });
+          setFamilyGroupId(id);
+          localStorage.setItem(STORAGE_KEY_FAMILY_GROUP_ID, id);
+      } catch (e) {
+          alert("Failed to create cloud group. Please check your Firebase configuration.");
+          console.error(e);
+      } finally {
+          setIsSyncing(false);
+      }
+  };
+
+  const handleJoinGroup = async (id: string) => {
+      try {
+          setIsSyncing(true);
+          const data = await getFamilyGroup(id);
+          // Overwrite local data with cloud data
+          setTasks(data.tasks || []);
+          setFamilyMembers(data.members || []);
+          setFamilyGroupId(id);
+          localStorage.setItem(STORAGE_KEY_FAMILY_GROUP_ID, id);
+          setIsSettingsOpen(false);
+      } catch (e) {
+          alert("Could not join group. Please check the code and try again.");
+      } finally {
+          setIsSyncing(false);
+      }
+  };
+
+  const handleLeaveGroup = () => {
+      if (window.confirm("Are you sure? You will stop syncing with the family group.")) {
+          setFamilyGroupId(null);
+          localStorage.removeItem(STORAGE_KEY_FAMILY_GROUP_ID);
+          // We keep the current data as local copy
+      }
+  };
+  
+  const handleUpdateMembers = (newMembers: FamilyMember[]) => {
+      setFamilyMembers(newMembers);
+      // The useEffect will handle the cloud sync
   };
 
   const sortedTasks = [...tasks].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -238,8 +373,13 @@ const App: React.FC = () => {
       {isSettingsOpen && (
         <Settings 
           familyMembers={familyMembers}
-          onUpdateMembers={setFamilyMembers}
+          onUpdateMembers={handleUpdateMembers}
           onClose={() => setIsSettingsOpen(false)}
+          familyGroupId={familyGroupId}
+          onCreateGroup={handleCreateGroup}
+          onJoinGroup={handleJoinGroup}
+          onLeaveGroup={handleLeaveGroup}
+          isSyncing={isSyncing}
         />
       )}
       
@@ -262,8 +402,14 @@ const App: React.FC = () => {
           familyMembers={familyMembers}
           onAddTask={handleAddTask}
           isLoading={isGeminiLoading}
+          user={user}
         />
-        <h2 className="text-2xl font-bold text-slate-800 mb-6 mt-12">Our Awesome Contributions</h2>
+        <h2 className="text-2xl font-bold text-slate-800 mb-6 mt-12 flex items-center gap-2">
+            Our Awesome Contributions
+            {familyGroupId && (
+                 <span className="bg-sky-100 text-sky-600 text-xs px-2 py-1 rounded-full font-medium" title="Synced with Cloud">Cloud Synced</span>
+            )}
+        </h2>
         <TaskList
           tasks={sortedTasks}
           familyMembers={familyMembers}

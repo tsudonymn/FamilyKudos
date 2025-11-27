@@ -1,20 +1,39 @@
-import React, { useState } from 'react';
-import { FamilyMember } from '../types';
+import React, { useState, useEffect } from 'react';
+import { FamilyMember, User } from '../types';
 
 interface TaskFormProps {
   familyMembers: FamilyMember[];
   onAddTask: (memberId: number, description: string) => void;
   isLoading: boolean;
+  user: User;
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({ familyMembers, onAddTask, isLoading }) => {
-  const [selectedMemberId, setSelectedMemberId] = useState<string>(String(familyMembers[0]?.id || ''));
+const STORAGE_KEY_DESCRIPTIONS = 'familyKudos_globalTaskDescriptions';
+const STORAGE_KEY_LAST_MEMBER = 'familyKudos_lastSelectedMemberId';
+
+const TaskForm: React.FC<TaskFormProps> = ({ familyMembers, onAddTask, isLoading, user }) => {
+  const [selectedMemberId, setSelectedMemberId] = useState<string>('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
+  const [recentDescriptions, setRecentDescriptions] = useState<string[]>([]);
+
+  // Load recent descriptions on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_DESCRIPTIONS);
+      if (stored) {
+        setRecentDescriptions(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error("Failed to load task descriptions", e);
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim()) {
+    const descTrimmed = description.trim();
+
+    if (!descTrimmed) {
       setError('Please describe what you did!');
       return;
     }
@@ -22,20 +41,65 @@ const TaskForm: React.FC<TaskFormProps> = ({ familyMembers, onAddTask, isLoading
         setError('Please select who did it! You can add family members in the settings.');
         return;
     }
-    onAddTask(Number(selectedMemberId), description.trim());
+    
+    onAddTask(Number(selectedMemberId), descTrimmed);
+    
+    // Save to recent descriptions
+    // Add new description to the top, remove duplicates (case-insensitive), keep top 50
+    const updatedDescriptions = [
+        descTrimmed, 
+        ...recentDescriptions.filter(d => d.toLowerCase() !== descTrimmed.toLowerCase())
+    ].slice(0, 50);
+
+    setRecentDescriptions(updatedDescriptions);
+    try {
+        localStorage.setItem(STORAGE_KEY_DESCRIPTIONS, JSON.stringify(updatedDescriptions));
+    } catch (e) {
+        console.error("Failed to save task description", e);
+    }
+
     setDescription('');
     setError('');
   };
   
+  // Initialize selection: Local Storage > Google Match > Empty
+  useEffect(() => {
+    if (familyMembers.length === 0) return;
+
+    // 1. Check Local Storage
+    const storedId = localStorage.getItem(STORAGE_KEY_LAST_MEMBER);
+    if (storedId && familyMembers.find(m => String(m.id) === storedId)) {
+        // If we have a valid stored ID, use it.
+        // We check current state to avoid unnecessary rerenders
+        setSelectedMemberId((prev) => (prev !== storedId ? storedId : prev));
+        return; 
+    }
+
+    // 2. If nothing stored/valid, try Google User Match
+    const isGuest = user.email === 'guest@familykudos.app';
+    if (!isGuest) {
+        const match = familyMembers.find(m => m.name.toLowerCase() === user.name.toLowerCase());
+        if (match) {
+            const matchId = String(match.id);
+            setSelectedMemberId((prev) => (prev !== matchId ? matchId : prev));
+        }
+    }
+    // 3. Otherwise remains empty
+  }, [user, familyMembers]);
+
   // Update selected member if the list changes and the current selection is gone
-  React.useEffect(() => {
-    if (familyMembers.length > 0 && !familyMembers.find(m => String(m.id) === selectedMemberId)) {
-      setSelectedMemberId(String(familyMembers[0].id));
-    } else if (familyMembers.length === 0) {
+  useEffect(() => {
+    if (selectedMemberId && !familyMembers.find(m => String(m.id) === selectedMemberId)) {
       setSelectedMemberId('');
+      localStorage.removeItem(STORAGE_KEY_LAST_MEMBER);
     }
   }, [familyMembers, selectedMemberId]);
 
+  const handleMemberChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const val = e.target.value;
+      setSelectedMemberId(val);
+      localStorage.setItem(STORAGE_KEY_LAST_MEMBER, val);
+  };
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-lg mb-8">
@@ -49,10 +113,11 @@ const TaskForm: React.FC<TaskFormProps> = ({ familyMembers, onAddTask, isLoading
             <select
               id="member"
               value={selectedMemberId}
-              onChange={(e) => setSelectedMemberId(e.target.value)}
+              onChange={handleMemberChange}
               className="w-full p-3 bg-slate-100 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition text-slate-900"
               disabled={familyMembers.length === 0}
             >
+              <option value="" disabled>Select your name...</option>
               {familyMembers.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.name}
@@ -67,11 +132,18 @@ const TaskForm: React.FC<TaskFormProps> = ({ familyMembers, onAddTask, isLoading
             <input
               id="description"
               type="text"
+              list="task-descriptions"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="e.g., Emptied the dishwasher"
               className="w-full p-3 bg-slate-100 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition text-slate-900 placeholder:text-slate-500"
+              autoComplete="off"
             />
+            <datalist id="task-descriptions">
+                {recentDescriptions.map((desc, index) => (
+                    <option key={index} value={desc} />
+                ))}
+            </datalist>
           </div>
         </div>
         {error && <p className="text-red-500 text-sm">{error}</p>}
