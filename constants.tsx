@@ -7,6 +7,21 @@ export const DEFAULT_FAMILY_MEMBERS: FamilyMember[] = [
   { id: 4, name: 'Bella', avatar: { initial: 'B', color: 'bg-purple-500' } },
 ];
 
+export const DEFAULT_QUICK_TASKS = [
+  'Emptied the dishwasher',
+  'Filled the dishwasher',
+  'Got the Mail',
+  'Washed and dried a load of laundry',
+  'Folded the laundry',
+  'Cleaned the bathroom',
+  'Took out recycling',
+  'Took out bins',
+  'Changed the bed sheets',
+  'Vacuumed',
+  '150g Tank Maintanance',
+  'Fed the Fish'
+];
+
 export const AVATAR_COLORS = [
   'bg-pink-500',
   'bg-blue-600',

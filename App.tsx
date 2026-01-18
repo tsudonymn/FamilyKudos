@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Task, FamilyMember, User } from './types';
-import { DEFAULT_FAMILY_MEMBERS } from './constants';
+import { DEFAULT_FAMILY_MEMBERS, DEFAULT_QUICK_TASKS } from './constants';
 import TaskForm from './components/TaskForm';
 import TaskList from './components/TaskList';
 import { getEncouragement } from './services/geminiService';
 import { createFamilyGroup, getFamilyGroup, updateFamilyGroup, subscribeToFamilyGroup } from './services/storageService';
+import { sendTaskNotification } from './services/chatService';
 import GeminiMessage from './components/GeminiMessage';
 import Settings from './components/Settings';
 import UserProfile from './components/UserProfile';
@@ -17,6 +18,7 @@ const GOOGLE_CLIENT_ID = config.googleClientId;
 
 const SHARED_STORAGE_KEY_TASKS = 'familyKudos_shared_tasks';
 const SHARED_STORAGE_KEY_MEMBERS = 'familyKudos_shared_members';
+const STORAGE_KEY_QUICK_SEEDS = 'familyKudos_quick_seeds';
 const STORAGE_KEY_FAMILY_GROUP_ID = 'familyKudos_familyGroupId';
 
 const App: React.FC = () => {
@@ -32,6 +34,7 @@ const App: React.FC = () => {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [quickTaskSeeds, setQuickTaskSeeds] = useState<string[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   
   // Cloud Sync State
@@ -49,7 +52,6 @@ const App: React.FC = () => {
 
   // Effect for handling Google Sign-In
   useEffect(() => {
-    // Skip GSI initialization if not configured to prevent 401 Invalid Client errors
     if (!isGoogleAuthConfigured) return;
 
     const handleCredentialResponse = (response: any) => {
@@ -84,7 +86,6 @@ const App: React.FC = () => {
             callback: handleCredentialResponse,
           });
           
-          // Try to render the button if the container exists
           const signInContainer = document.getElementById('signInDiv');
           if (signInContainer) {
             google.accounts.id.renderButton(
@@ -98,7 +99,6 @@ const App: React.FC = () => {
       }
     };
     
-    // GSI script might load after component mounts
     const script = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
     if (script) {
         script.addEventListener('load', initializeGSI);
@@ -108,21 +108,21 @@ const App: React.FC = () => {
         initializeGSI();
     }
     
-    // Cleanup listener
     return () => {
         if (script) script.removeEventListener('load', initializeGSI);
     };
   }, [isGoogleAuthConfigured, user]);
   
   // Function to sync data to cloud
-  const syncToCloud = useCallback(async (currentTasks: Task[], currentMembers: FamilyMember[]) => {
+  const syncToCloud = useCallback(async (currentTasks: Task[], currentMembers: FamilyMember[], currentSeeds: string[]) => {
       if (!familyGroupId) return;
       
       try {
           setIsSyncing(true);
           await updateFamilyGroup(familyGroupId, {
               tasks: currentTasks,
-              members: currentMembers
+              members: currentMembers,
+              quickTaskSeeds: currentSeeds
           });
       } catch (error) {
           console.error("Error syncing to cloud:", error);
@@ -136,19 +136,20 @@ const App: React.FC = () => {
     if (user && !isDataLoaded) {
       const loadData = async () => {
         try {
-            // Priority: Cloud > Local Storage > Default
             if (familyGroupId) {
                 try {
                     const cloudData = await getFamilyGroup(familyGroupId);
                     setTasks(cloudData.tasks || []);
                     setFamilyMembers(cloudData.members || []);
+                    setQuickTaskSeeds(cloudData.quickTaskSeeds || DEFAULT_QUICK_TASKS);
                 } catch (e) {
                     console.error("Failed to load from cloud, falling back to local", e);
-                    // Fallback to local if cloud fails
                     const savedTasks = localStorage.getItem(SHARED_STORAGE_KEY_TASKS);
                     setTasks(savedTasks ? JSON.parse(savedTasks) : []);
                     const savedMembers = localStorage.getItem(SHARED_STORAGE_KEY_MEMBERS);
                     setFamilyMembers(savedMembers ? JSON.parse(savedMembers) : DEFAULT_FAMILY_MEMBERS);
+                    const savedSeeds = localStorage.getItem(STORAGE_KEY_QUICK_SEEDS);
+                    setQuickTaskSeeds(savedSeeds ? JSON.parse(savedSeeds) : DEFAULT_QUICK_TASKS);
                 }
             } else {
                 const savedTasks = localStorage.getItem(SHARED_STORAGE_KEY_TASKS);
@@ -156,11 +157,15 @@ const App: React.FC = () => {
 
                 const savedMembers = localStorage.getItem(SHARED_STORAGE_KEY_MEMBERS);
                 setFamilyMembers(savedMembers ? JSON.parse(savedMembers) : DEFAULT_FAMILY_MEMBERS);
+
+                const savedSeeds = localStorage.getItem(STORAGE_KEY_QUICK_SEEDS);
+                setQuickTaskSeeds(savedSeeds ? JSON.parse(savedSeeds) : DEFAULT_QUICK_TASKS);
             }
             setIsDataLoaded(true);
         } catch (error) {
             console.error("Could not parse data", error);
             setFamilyMembers(DEFAULT_FAMILY_MEMBERS);
+            setQuickTaskSeeds(DEFAULT_QUICK_TASKS);
             setTasks([]);
             setIsDataLoaded(true);
         }
@@ -172,12 +177,9 @@ const App: React.FC = () => {
   // Real-time Cloud Subscription
   useEffect(() => {
     if (familyGroupId && isDataLoaded) {
-        console.log("Subscribing to family group:", familyGroupId);
         const unsubscribe = subscribeToFamilyGroup(
             familyGroupId, 
             (data) => {
-                // Update state from cloud
-                // We use functional updates to check if data actually changed to prevent loops
                 setTasks(prev => {
                     if (JSON.stringify(prev) !== JSON.stringify(data.tasks)) {
                         return data.tasks || [];
@@ -187,6 +189,12 @@ const App: React.FC = () => {
                 setFamilyMembers(prev => {
                     if (JSON.stringify(prev) !== JSON.stringify(data.members)) {
                         return data.members || [];
+                    }
+                    return prev;
+                });
+                setQuickTaskSeeds(prev => {
+                    if (JSON.stringify(prev) !== JSON.stringify(data.quickTaskSeeds)) {
+                        return data.quickTaskSeeds || DEFAULT_QUICK_TASKS;
                     }
                     return prev;
                 });
@@ -200,32 +208,28 @@ const App: React.FC = () => {
     }
   }, [familyGroupId, isDataLoaded]);
 
-  // Effect for saving data to localStorage AND Cloud
-  // We use this effect to react to any state change in tasks/members
+  // Sync state to local storage and trigger cloud sync
   useEffect(() => {
     if (user && isDataLoaded) {
       try {
         localStorage.setItem(SHARED_STORAGE_KEY_TASKS, JSON.stringify(tasks));
         localStorage.setItem(SHARED_STORAGE_KEY_MEMBERS, JSON.stringify(familyMembers));
+        localStorage.setItem(STORAGE_KEY_QUICK_SEEDS, JSON.stringify(quickTaskSeeds));
         
-        // Trigger cloud sync if connected
-        // Note: we don't await here, we fire and forget (optimistic UI)
         if (familyGroupId) {
-            syncToCloud(tasks, familyMembers);
+            syncToCloud(tasks, familyMembers, quickTaskSeeds);
         }
       } catch (error) {
         console.error("Could not save data", error);
       }
     }
-  }, [tasks, familyMembers, user, isDataLoaded, familyGroupId, syncToCloud]);
+  }, [tasks, familyMembers, quickTaskSeeds, user, isDataLoaded, familyGroupId, syncToCloud]);
   
   const handleLogout = () => {
     if (isGoogleAuthConfigured && window.google) {
       try {
         google.accounts.id.disableAutoSelect();
-      } catch (e) {
-        // Ignore errors if GSI isn't fully loaded
-      }
+      } catch (e) {}
     }
     localStorage.removeItem('familyKudosUser');
     setUser(null);
@@ -253,16 +257,20 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
     };
     
-    // Optimistic Update
-    const newTasks = [newTask, ...tasks];
-    setTasks(newTasks);
+    setTasks(prev => [newTask, ...prev]);
     
     const memberName = familyMembers.find(m => m.id === memberId)?.name || 'Someone';
-    const encouragement = await getEncouragement(memberName, description);
     
-    setGeminiMessage(encouragement);
-    setIsGeminiLoading(false);
-  }, [familyMembers, tasks]);
+    try {
+        const encouragement = await getEncouragement(memberName, description);
+        setGeminiMessage(encouragement);
+        sendTaskNotification(memberName, description, encouragement);
+    } catch (e) {
+        console.error("Error in background tasks:", e);
+    } finally {
+        setIsGeminiLoading(false);
+    }
+  }, [familyMembers]);
   
   const handleAppreciateTask = (taskId: number) => {
     setTasks(prevTasks =>
@@ -280,16 +288,14 @@ const App: React.FC = () => {
     }
   };
 
-  // Cloud Sync Handlers
   const handleCreateGroup = async () => {
       try {
           setIsSyncing(true);
-          const id = await createFamilyGroup({ tasks, members: familyMembers });
+          const id = await createFamilyGroup({ tasks, members: familyMembers, quickTaskSeeds });
           setFamilyGroupId(id);
           localStorage.setItem(STORAGE_KEY_FAMILY_GROUP_ID, id);
       } catch (e: any) {
           alert(`Failed to create cloud group: ${e.message}`);
-          console.error(e);
       } finally {
           setIsSyncing(false);
       }
@@ -299,9 +305,9 @@ const App: React.FC = () => {
       try {
           setIsSyncing(true);
           const data = await getFamilyGroup(id);
-          // Overwrite local data with cloud data
           setTasks(data.tasks || []);
           setFamilyMembers(data.members || []);
+          setQuickTaskSeeds(data.quickTaskSeeds || DEFAULT_QUICK_TASKS);
           setFamilyGroupId(id);
           localStorage.setItem(STORAGE_KEY_FAMILY_GROUP_ID, id);
           setIsSettingsOpen(false);
@@ -316,14 +322,11 @@ const App: React.FC = () => {
       if (window.confirm("Are you sure? You will stop syncing with the family group.")) {
           setFamilyGroupId(null);
           localStorage.removeItem(STORAGE_KEY_FAMILY_GROUP_ID);
-          // We keep the current data as local copy
       }
   };
   
-  const handleUpdateMembers = (newMembers: FamilyMember[]) => {
-      setFamilyMembers(newMembers);
-      // The useEffect will handle the cloud sync
-  };
+  const handleUpdateMembers = (newMembers: FamilyMember[]) => setFamilyMembers(newMembers);
+  const handleUpdateSeeds = (newSeeds: string[]) => setQuickTaskSeeds(newSeeds);
 
   const sortedTasks = [...tasks].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
@@ -361,12 +364,6 @@ const App: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                 </svg>
             </button>
-            
-            {!isGoogleAuthConfigured && (
-                 <p className="mt-6 text-xs text-slate-400">
-                    To enable Google Sign-In, update <code>GOOGLE_CLIENT_ID</code> in <code>config.ts</code>.
-                 </p>
-            )}
         </div>
       </div>
     );
@@ -378,7 +375,9 @@ const App: React.FC = () => {
       {isSettingsOpen && (
         <Settings 
           familyMembers={familyMembers}
+          quickTaskSeeds={quickTaskSeeds}
           onUpdateMembers={handleUpdateMembers}
+          onUpdateSeeds={handleUpdateSeeds}
           onClose={() => setIsSettingsOpen(false)}
           familyGroupId={familyGroupId}
           onCreateGroup={handleCreateGroup}
@@ -405,6 +404,7 @@ const App: React.FC = () => {
       <main className="container mx-auto p-4 md:p-8">
         <TaskForm
           familyMembers={familyMembers}
+          quickTaskSeeds={quickTaskSeeds}
           onAddTask={handleAddTask}
           isLoading={isGeminiLoading}
           user={user}

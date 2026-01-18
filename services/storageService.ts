@@ -16,6 +16,7 @@ const COLLECTION_NAME = 'familyGroups';
 interface StorageData {
   tasks: Task[];
   members: FamilyMember[];
+  quickTaskSeeds?: string[];
 }
 
 // Helper to ensure DB is initialized

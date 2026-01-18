@@ -32,5 +32,11 @@ export const config = {
 
   // Gemini API Configuration
   // Note: The API key is injected automatically into process.env.API_KEY in the AI Studio environment
-  geminiApiKey: getEnvVar('API_KEY', process.env.API_KEY)
+  geminiApiKey: getEnvVar('API_KEY', process.env.API_KEY),
+  
+  // Google Chat Configuration
+  googleChatWebhookUrl: getEnvVar('GOOGLE_CHAT_WEBHOOK_URL', process.env.GOOGLE_CHAT_WEBHOOK_URL),
+  // For Service Account Auth (Personal Accounts)
+  serviceAccountJson: getEnvVar('SERVICE_ACCOUNT_JSON', process.env.SERVICE_ACCOUNT_JSON),
+  googleChatSpaceName: getEnvVar('GOOGLE_CHAT_SPACE_NAME', process.env.GOOGLE_CHAT_SPACE_NAME)
 };

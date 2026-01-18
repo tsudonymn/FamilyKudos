@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { FamilyMember } from '../types';
 import { AVATAR_COLORS } from '../constants';
@@ -7,7 +6,9 @@ import TrashIcon from './icons/TrashIcon';
 
 interface SettingsProps {
   familyMembers: FamilyMember[];
+  quickTaskSeeds: string[];
   onUpdateMembers: (members: FamilyMember[]) => void;
+  onUpdateSeeds: (seeds: string[]) => void;
   onClose: () => void;
   familyGroupId: string | null;
   onCreateGroup: () => void;
@@ -18,7 +19,9 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ 
   familyMembers, 
+  quickTaskSeeds,
   onUpdateMembers, 
+  onUpdateSeeds,
   onClose,
   familyGroupId,
   onCreateGroup,
@@ -27,6 +30,7 @@ const Settings: React.FC<SettingsProps> = ({
   isSyncing
 }) => {
   const [newMemberName, setNewMemberName] = useState('');
+  const [newSeedText, setNewSeedText] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [copyStatus, setCopyStatus] = useState('Copy Code');
   
@@ -36,7 +40,6 @@ const Settings: React.FC<SettingsProps> = ({
   const [isSavingEnv, setIsSavingEnv] = useState(false);
 
   useEffect(() => {
-    // Load existing env config from local storage for display
     const stored = localStorage.getItem('familyKudos_envConfig');
     if (stored) {
         try {
@@ -45,9 +48,7 @@ const Settings: React.FC<SettingsProps> = ({
                 .map(([k, v]) => `${k}=${v}`)
                 .join('\n');
             setEnvConfigInput(formatted);
-        } catch(e) {
-            // ignore error
-        }
+        } catch(e) {}
     }
   }, []);
 
@@ -68,8 +69,21 @@ const Settings: React.FC<SettingsProps> = ({
     }
   };
 
+  const handleAddSeed = (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = newSeedText.trim();
+    if (text && !quickTaskSeeds.includes(text)) {
+      onUpdateSeeds([...quickTaskSeeds, text]);
+      setNewSeedText('');
+    }
+  };
+
   const handleDeleteMember = (id: number) => {
     onUpdateMembers(familyMembers.filter(member => member.id !== id));
+  };
+
+  const handleDeleteSeed = (seedToDelete: string) => {
+    onUpdateSeeds(quickTaskSeeds.filter(seed => seed !== seedToDelete));
   };
   
   const handleCopyCode = () => {
@@ -88,12 +102,10 @@ const Settings: React.FC<SettingsProps> = ({
       lines.forEach(line => {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith('#')) return;
-          
-          const match = trimmed.match(/^([^=]+)=(.*)$/);
-          if (match) {
-              const key = match[1].trim();
-              let value = match[2].trim();
-              // Remove quotes if present
+          const firstEqualIndex = trimmed.indexOf('=');
+          if (firstEqualIndex > -1) {
+              const key = trimmed.substring(0, firstEqualIndex).trim();
+              let value = trimmed.substring(firstEqualIndex + 1).trim();
               if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
                   value = value.slice(1, -1);
               }
@@ -103,12 +115,8 @@ const Settings: React.FC<SettingsProps> = ({
       
       try {
         localStorage.setItem('familyKudos_envConfig', JSON.stringify(config));
-        // Automatically reload after a short delay
-        setTimeout(() => {
-            window.location.reload();
-        }, 500);
+        setTimeout(() => window.location.reload(), 500);
       } catch (e) {
-        console.error("Failed to save config", e);
         setIsSavingEnv(false);
         alert("Failed to save configuration locally.");
       }
@@ -147,152 +155,98 @@ const Settings: React.FC<SettingsProps> = ({
             
             {familyGroupId ? (
                 <div className="space-y-3">
-                    <p className="text-sm text-sky-700">
-                        You are connected to a shared family group. Share this code with other family members to sync devices.
-                    </p>
+                    <p className="text-sm text-sky-700">Connected to group code:</p>
                     <div className="flex gap-2">
                         <code className="flex-grow p-2 bg-white border border-sky-200 rounded text-sm font-mono text-slate-600 truncate select-all">
                             {familyGroupId}
                         </code>
-                        <button 
-                            onClick={handleCopyCode}
-                            className="bg-sky-200 text-sky-700 px-3 py-1 rounded hover:bg-sky-300 text-sm font-medium transition-colors"
-                        >
+                        <button onClick={handleCopyCode} className="bg-sky-200 text-sky-700 px-3 py-1 rounded hover:bg-sky-300 text-sm font-medium transition-colors">
                             {copyStatus}
                         </button>
                     </div>
-                    <button 
-                        onClick={onLeaveGroup}
-                        className="w-full mt-2 py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
-                    >
+                    <button onClick={onLeaveGroup} className="w-full mt-2 py-2 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors">
                         Disconnect from Cloud
                     </button>
-                    {isSyncing && <p className="text-xs text-center text-slate-400">Syncing...</p>}
                 </div>
             ) : (
                 <div className="space-y-4">
-                    <p className="text-sm text-sky-700">
-                        Sync your data across devices by creating a group or joining an existing one.
-                    </p>
-                    <button 
-                        onClick={onCreateGroup}
-                        disabled={isSyncing}
-                        className="w-full bg-sky-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-600 transition disabled:opacity-50"
-                    >
+                    <button onClick={onCreateGroup} disabled={isSyncing} className="w-full bg-sky-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-sky-600 transition disabled:opacity-50">
                         {isSyncing ? 'Creating...' : 'Create Shared Group'}
                     </button>
-                    
-                    <div className="flex items-center gap-2">
-                        <div className="h-px bg-sky-200 flex-grow"></div>
-                        <span className="text-xs text-sky-400 font-medium">OR JOIN</span>
-                        <div className="h-px bg-sky-200 flex-grow"></div>
-                    </div>
-                    
                     <div className="flex gap-2">
-                        <input 
-                            type="text" 
-                            placeholder="Paste Family Code"
-                            value={joinCode}
-                            onChange={(e) => setJoinCode(e.target.value)}
-                            className="flex-grow p-2 text-sm bg-white border border-sky-200 rounded focus:ring-2 focus:ring-sky-500 outline-none"
-                        />
-                        <button 
-                            onClick={() => onJoinGroup(joinCode)}
-                            disabled={!joinCode || isSyncing}
-                            className="bg-white text-sky-600 border border-sky-200 font-bold py-2 px-4 rounded-lg hover:bg-sky-50 transition disabled:opacity-50"
-                        >
-                            {isSyncing ? '...' : 'Join'}
+                        <input type="text" placeholder="Paste Family Code" value={joinCode} onChange={(e) => setJoinCode(e.target.value)} className="flex-grow p-2 text-sm bg-white border border-sky-200 rounded focus:ring-2 focus:ring-sky-500 outline-none" />
+                        <button onClick={() => onJoinGroup(joinCode)} disabled={!joinCode || isSyncing} className="bg-white text-sky-600 border border-sky-200 font-bold py-2 px-4 rounded-lg hover:bg-sky-50 transition disabled:opacity-50">
+                            Join
                         </button>
                     </div>
                 </div>
             )}
         </div>
 
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-slate-700 mb-3">Add New Member</h3>
-          <form onSubmit={handleAddMember} className="flex gap-2">
-            <input
-              type="text"
-              value={newMemberName}
-              onChange={(e) => setNewMemberName(e.target.value)}
-              placeholder="Enter name"
-              className="flex-grow p-3 bg-slate-100 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition text-slate-900 placeholder:text-slate-500"
-            />
-            <button
-              type="submit"
-              className="bg-sky-500 text-white font-bold py-3 px-5 rounded-lg hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-all"
-            >
-              Add
-            </button>
-          </form>
-        </div>
-
+        {/* Member Management */}
         <div className="mb-8">
-          <h3 className="text-lg font-semibold text-slate-700 mb-3">Current Members</h3>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {familyMembers.length > 0 ? familyMembers.map(member => (
-              <div key={member.id} className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
-                <div className="flex items-center gap-3">
+          <h3 className="text-lg font-semibold text-slate-700 mb-3">Family Members</h3>
+          <form onSubmit={handleAddMember} className="flex gap-2 mb-4">
+            <input type="text" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} placeholder="Add member name" className="flex-grow p-2 bg-slate-100 border border-slate-300 rounded-lg text-sm" />
+            <button type="submit" className="bg-sky-500 text-white font-bold py-2 px-4 rounded-lg text-sm">Add</button>
+          </form>
+          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+            {familyMembers.map(member => (
+              <div key={member.id} className="flex items-center justify-between bg-slate-50 p-2 rounded-lg text-sm">
+                <div className="flex items-center gap-2">
                   <Avatar initial={member.avatar.initial} color={member.avatar.color} />
                   <span className="font-medium text-slate-800">{member.name}</span>
                 </div>
-                <button
-                  onClick={() => handleDeleteMember(member.id)}
-                  className="text-slate-400 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
-                  aria-label={`Remove ${member.name}`}
-                >
-                  <TrashIcon className="w-5 h-5" />
+                <button onClick={() => handleDeleteMember(member.id)} className="text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50">
+                  <TrashIcon className="w-4 h-4" />
                 </button>
               </div>
-            )) : (
-              <p className="text-slate-500 text-center py-4">No family members yet. Add one above!</p>
-            )}
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Task Seeds */}
+        <div className="mb-8 border-t border-slate-100 pt-6">
+          <h3 className="text-lg font-semibold text-slate-700 mb-3">Quick Task Suggestions</h3>
+          <p className="text-xs text-slate-500 mb-3">These items always appear in your Quick Select list.</p>
+          <form onSubmit={handleAddSeed} className="flex gap-2 mb-4">
+            <input type="text" value={newSeedText} onChange={(e) => setNewSeedText(e.target.value)} placeholder="e.g., Cleaned the Kitchen" className="flex-grow p-2 bg-slate-100 border border-slate-300 rounded-lg text-sm" />
+            <button type="submit" className="bg-sky-500 text-white font-bold py-2 px-4 rounded-lg text-sm">Add</button>
+          </form>
+          <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+            {quickTaskSeeds.map((seed, idx) => (
+              <div key={idx} className="flex items-center gap-2 bg-sky-50 border border-sky-100 px-2 py-1 rounded-md text-xs text-sky-700 group">
+                <span>{seed}</span>
+                <button onClick={() => handleDeleteSeed(seed)} className="text-sky-300 hover:text-red-500 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Environment Configuration */}
         <div className="border-t border-slate-200 pt-6">
-            <button 
-                onClick={() => setShowEnvConfig(!showEnvConfig)}
-                className="flex items-center justify-between w-full text-left text-slate-600 font-semibold mb-2 hover:text-sky-600 transition-colors"
-            >
+            <button onClick={() => setShowEnvConfig(!showEnvConfig)} className="flex items-center justify-between w-full text-left text-slate-600 font-semibold mb-2 hover:text-sky-600 transition-colors">
                 <span>App Configuration</span>
                 <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transform transition-transform ${showEnvConfig ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
-            
             {showEnvConfig && (
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 animate-fade-in">
-                    <p className="text-xs text-slate-500 mb-2">
-                        Paste the content of your <code>.env</code> file here to configure Google Auth and Firebase.
-                    </p>
-                    <textarea 
-                        value={envConfigInput}
-                        onChange={(e) => setEnvConfigInput(e.target.value)}
-                        placeholder="GOOGLE_CLIENT_ID=...&#10;FIREBASE_API_KEY=..."
-                        className="w-full h-32 p-2 text-xs font-mono bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 outline-none mb-3"
-                        spellCheck={false}
-                    />
+                    <textarea value={envConfigInput} onChange={(e) => setEnvConfigInput(e.target.value)} placeholder={`GOOGLE_CLIENT_ID=...\nFIREBASE_API_KEY=...`} className="w-full h-32 p-2 text-xs font-mono bg-white border border-slate-300 rounded-md outline-none mb-3" spellCheck={false} />
                     <div className="flex gap-2 justify-end">
-                        <button 
-                            onClick={handleClearEnvConfig}
-                            className="px-3 py-1.5 text-xs text-slate-500 hover:text-red-600 font-medium transition-colors"
-                        >
-                            Reset
-                        </button>
-                        <button 
-                            onClick={handleSaveEnvConfig}
-                            disabled={isSavingEnv}
-                            className="bg-slate-800 text-white px-4 py-1.5 rounded-md text-xs font-bold hover:bg-slate-700 transition-colors disabled:opacity-50"
-                        >
-                            {isSavingEnv ? 'Reloading...' : 'Save & Reload'}
+                        <button onClick={handleClearEnvConfig} className="px-3 py-1.5 text-xs text-slate-500 hover:text-red-600 font-medium">Reset</button>
+                        <button onClick={handleSaveEnvConfig} disabled={isSavingEnv} className="bg-slate-800 text-white px-4 py-1.5 rounded-md text-xs font-bold hover:bg-slate-700">
+                            {isSavingEnv ? 'Saving...' : 'Save & Reload'}
                         </button>
                     </div>
                 </div>
             )}
         </div>
-
       </div>
     </div>
   );
