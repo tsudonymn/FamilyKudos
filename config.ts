@@ -1,4 +1,3 @@
-
 // Helper to read parsed env config from local storage
 const getStoredEnv = (): Record<string, string> => {
   try {
@@ -17,8 +16,8 @@ const getEnvVar = (key: string, processEnvVar: string | undefined, fallback?: st
 };
 
 export const config = {
-  // Google Auth Configuration
-  googleClientId: getEnvVar('GOOGLE_CLIENT_ID', process.env.GOOGLE_CLIENT_ID, "1088368351089-8dn0g5auntt7338ch65gp63jqdqsi2oa.apps.googleusercontent.com"),
+  // Google Auth Configuration 
+  googleClientId: getEnvVar('GOOGLE_CLIENT_ID', process.env.GOOGLE_CLIENT_ID, "167506236770-tuof1mch47r2d4gq40chlgn6s8go96o7.apps.googleusercontent.com"),
 
   // Firebase Configuration
   firebase: {
@@ -38,5 +37,9 @@ export const config = {
   googleChatWebhookUrl: getEnvVar('GOOGLE_CHAT_WEBHOOK_URL', process.env.GOOGLE_CHAT_WEBHOOK_URL),
   // For Service Account Auth (Personal Accounts)
   serviceAccountJson: getEnvVar('SERVICE_ACCOUNT_JSON', process.env.SERVICE_ACCOUNT_JSON),
-  googleChatSpaceName: getEnvVar('GOOGLE_CHAT_SPACE_NAME', process.env.GOOGLE_CHAT_SPACE_NAME)
+  googleChatSpaceName: getEnvVar('GOOGLE_CHAT_SPACE_NAME', process.env.GOOGLE_CHAT_SPACE_NAME),
+
+  // External Logging Webhook
+  externalWebhookUrl: getEnvVar('EXTERNAL_WEBHOOK_URL', process.env.EXTERNAL_WEBHOOK_URL, "https://script.google.com/macros/s/AKfycbzFhlrjblSL9dtvAnDAZQd-hKz5HjDu1xydqIu7awMjC4UktRUDIdjnf8FPLnwgTLSnZA/exec")
+  
 };

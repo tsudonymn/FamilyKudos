@@ -9,6 +9,7 @@ interface SettingsProps {
   quickTaskSeeds: string[];
   onUpdateMembers: (members: FamilyMember[]) => void;
   onUpdateSeeds: (seeds: string[]) => void;
+  onRestoreDefaults: () => void;
   onClose: () => void;
   familyGroupId: string | null;
   onCreateGroup: () => void;
@@ -22,6 +23,7 @@ const Settings: React.FC<SettingsProps> = ({
   quickTaskSeeds,
   onUpdateMembers, 
   onUpdateSeeds,
+  onRestoreDefaults,
   onClose,
   familyGroupId,
   onCreateGroup,
@@ -142,7 +144,15 @@ const Settings: React.FC<SettingsProps> = ({
           </svg>
         </button>
         
-        <h2 className="text-2xl font-bold text-slate-800 mb-6">Family Settings</h2>
+        <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-slate-800">Family Settings</h2>
+            <button 
+                onClick={onRestoreDefaults}
+                className="text-[10px] uppercase tracking-wider font-bold text-sky-600 hover:text-sky-800 bg-sky-50 px-2 py-1 rounded border border-sky-100 transition-colors"
+            >
+                Reset to Defaults
+            </button>
+        </div>
 
         {/* Cloud Sync Section */}
         <div className="mb-8 p-4 bg-sky-50 rounded-xl border border-sky-100">
@@ -232,7 +242,7 @@ const Settings: React.FC<SettingsProps> = ({
             <button onClick={() => setShowEnvConfig(!showEnvConfig)} className="flex items-center justify-between w-full text-left text-slate-600 font-semibold mb-2 hover:text-sky-600 transition-colors">
                 <span>App Configuration</span>
                 <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transform transition-transform ${showEnvConfig ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
             {showEnvConfig && (

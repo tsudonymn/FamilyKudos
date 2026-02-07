@@ -20,9 +20,10 @@ export interface FamilyMember {
 
 export interface Task {
   id: number;
+  uuid: string; // Unique identifier for external tracking
   description: string;
   memberId: number;
-  appreciationCount: number;
+  appreciatorIds: number[]; // Stores IDs of members who thanked the task
   timestamp: string; // Storing as ISO string for localStorage compatibility
 }
 

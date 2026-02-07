@@ -9,7 +9,7 @@ export const getEncouragement = async (memberName: string, taskDescription: stri
     const prompt = `Generate a very short, cheerful, one-sentence message praising a family member named ${memberName} for completing the task: "${taskDescription}". The tone should be warm, positive, and encouraging. Do not use quotes in the response. Keep it under 15 words.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
 
